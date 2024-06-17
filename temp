@@ -1,0 +1,217 @@
+CREATE TABLE FileHeader (
+    Id INT PRIMARY KEY IDENTITY,
+    SenderId NVARCHAR(50),
+    ReceiverId NVARCHAR(50),
+    FileCreationDate NVARCHAR(20),
+    FileCreationTime NVARCHAR(20),
+    FileIdNumber BIGINT,
+    RecordLength BIGINT,
+    BlockSize BIGINT,
+    VersionNumber BIGINT
+);
+
+CREATE TABLE GroupHeader (
+    Id INT PRIMARY KEY IDENTITY,
+    ReceiverId NVARCHAR(50),
+    SenderId NVARCHAR(50),
+    GroupStatus NVARCHAR(10),
+    AsOfDate NVARCHAR(20),
+    AsOfTime NVARCHAR(20),
+    CurrencyCode NVARCHAR(10),
+    AsOfDateModifier INT,
+    FileHeaderId INT FOREIGN KEY REFERENCES FileHeader(Id)
+);
+
+CREATE TABLE AccountRecord (
+    Id INT PRIMARY KEY IDENTITY,
+    AccountNumber NVARCHAR(50),
+    CurrencyCode NVARCHAR(10),
+    GroupHeaderId INT FOREIGN KEY REFERENCES GroupHeader(Id)
+);
+
+CREATE TABLE AccountDetails (
+    Id INT PRIMARY KEY IDENTITY,
+    TypeCode NVARCHAR(10),
+    Amount DECIMAL(18, 2),
+    ItemCount BIGINT,
+    AccountRecordId INT FOREIGN KEY REFERENCES AccountRecord(Id)
+);
+
+CREATE TABLE TransactionRecord (
+    Id INT PRIMARY KEY IDENTITY,
+    TypeCode NVARCHAR(10),
+    Amount DECIMAL(18, 2),
+    BankReferenceNumber NVARCHAR(50),
+    CustomerReferenceNumber NVARCHAR(50),
+    Text NVARCHAR(MAX),
+    AccountRecordId INT FOREIGN KEY REFERENCES AccountRecord(Id)
+);
+
+CREATE TABLE AccountTotals (
+    Id INT PRIMARY KEY IDENTITY,
+    AccountControlTotal DECIMAL(18, 2),
+    NumberOfRecords BIGINT,
+    AccountRecordId INT FOREIGN KEY REFERENCES AccountRecord(Id)
+);
+
+CREATE TABLE GroupTotals (
+    Id INT PRIMARY KEY IDENTITY,
+    GroupControlTotal DECIMAL(18, 2),
+    NumberOfAccounts BIGINT,
+    NumberOfRecords BIGINT,
+    GroupHeaderId INT FOREIGN KEY REFERENCES GroupHeader(Id)
+);
+
+CREATE TABLE FileTrailer (
+    Id INT PRIMARY KEY IDENTITY,
+    FileControlTotal DECIMAL(18, 2),
+    NumberOfGroups BIGINT,
+    NumberOfRecords BIGINT,
+    FileHeaderId INT FOREIGN KEY REFERENCES FileHeader(Id)
+);
+
+CREATE TABLE FundType (
+    Id INT PRIMARY KEY IDENTITY,
+    FundsType NVARCHAR(10),
+    ImmediateAmount DECIMAL(18, 2),
+    OneDayAmount DECIMAL(18, 2),
+    TwoOrMoreDaysAmount DECIMAL(18, 2),
+    ValueDate NVARCHAR(20),
+    ValueTime NVARCHAR(20),
+    NumberOfDistributions BIGINT,
+    DistributionInfo NVARCHAR(MAX),
+    AccountDetailId INT FOREIGN KEY REFERENCES AccountDetails(Id),
+    TransactionRecordId INT FOREIGN KEY REFERENCES TransactionRecord(Id)
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+DECLARE @json NVARCHAR(MAX);
+
+SELECT @json = BulkColumn
+FROM OPENROWSET (BULK 'C:\path\to\parsedData.json', SINGLE_CLOB) AS j;
+
+
+
+DECLARE @FileHeaderId INT;
+
+INSERT INTO FileHeader (SenderId, ReceiverId, FileCreationDate, FileCreationTime, FileIdNumber, RecordLength, BlockSize, VersionNumber)
+OUTPUT INSERTED.Id INTO @FileHeaderId
+SELECT
+    JSON_VALUE(@json, '$.FileHeader.SenderId'),
+    JSON_VALUE(@json, '$.FileHeader.ReceiverId'),
+    JSON_VALUE(@json, '$.FileHeader.FileCreationDate'),
+    JSON_VALUE(@json, '$.FileHeader.FileCreationTime'),
+    CAST(JSON_VALUE(@json, '$.FileHeader.FileIdNumber') AS BIGINT),
+    CAST(JSON_VALUE(@json, '$.FileHeader.RecordLength') AS BIGINT),
+    CAST(JSON_VALUE(@json, '$.FileHeader.BlockSize') AS BIGINT),
+    CAST(JSON_VALUE(@json, '$.FileHeader.VersionNumber') AS BIGINT);
+
+
+DECLARE @GroupHeaderId INT;
+
+INSERT INTO GroupHeader (ReceiverId, SenderId, GroupStatus, AsOfDate, AsOfTime, CurrencyCode, AsOfDateModifier, FileHeaderId)
+OUTPUT INSERTED.Id INTO @GroupHeaderId
+SELECT
+    JSON_VALUE(group.value, '$.ReceiverId'),
+    JSON_VALUE(group.value, '$.SenderId'),
+    JSON_VALUE(group.value, '$.GroupStatus'),
+    JSON_VALUE(group.value, '$.AsOfDate'),
+    JSON_VALUE(group.value, '$.AsOfTime'),
+    JSON_VALUE(group.value, '$.CurrencyCode'),
+    CAST(JSON_VALUE(group.value, '$.AsOfDateModifier') AS INT),
+    @FileHeaderId
+FROM OPENJSON(@json, '$.Groups') AS group;
+
+
+DECLARE @AccountRecordId INT;
+
+INSERT INTO AccountRecord (AccountNumber, CurrencyCode, GroupHeaderId)
+OUTPUT INSERTED.Id INTO @AccountRecordId
+SELECT
+    JSON_VALUE(account.value, '$.AccountNumber'),
+    JSON_VALUE(account.value, '$.CurrencyCode'),
+    @GroupHeaderId
+FROM OPENJSON(@json, '$.Groups.Accounts') AS account;
+
+
+DECLARE @json NVARCHAR(MAX);
+
+SELECT @json = BulkColumn
+FROM OPENROWSET (BULK 'C:\path\to\parsedData.json', SINGLE_CLOB) AS j;
+
+DECLARE @FileHeaderId INT;
+
+-- Insert FileHeader
+INSERT INTO FileHeader (SenderId, ReceiverId, FileCreationDate, FileCreationTime, FileIdNumber, RecordLength, BlockSize, VersionNumber)
+OUTPUT INSERTED.Id INTO @FileHeaderId
+SELECT
+    JSON_VALUE(@json, '$.FileHeader.SenderId'),
+    JSON_VALUE(@json, '$.FileHeader.ReceiverId'),
+    JSON_VALUE(@json, '$.FileHeader.FileCreationDate'),
+    JSON_VALUE(@json, '$.FileHeader.FileCreationTime'),
+    CAST(JSON_VALUE(@json, '$.FileHeader.FileIdNumber') AS BIGINT),
+    CAST(JSON_VALUE(@json, '$.FileHeader.RecordLength') AS BIGINT),
+    CAST(JSON_VALUE(@json, '$.FileHeader.BlockSize') AS BIGINT),
+    CAST(JSON_VALUE(@json, '$.FileHeader.VersionNumber') AS BIGINT);
+
+-- Insert GroupHeader
+DECLARE @GroupHeaderId INT;
+INSERT INTO GroupHeader (ReceiverId, SenderId, GroupStatus, AsOfDate, AsOfTime, CurrencyCode, AsOfDateModifier, FileHeaderId)
+OUTPUT INSERTED.Id INTO @GroupHeaderId
+SELECT
+    JSON_VALUE(group.value, '$.ReceiverId'),
+    JSON_VALUE(group.value, '$.SenderId'),
+    JSON_VALUE(group.value, '$.GroupStatus'),
+    JSON_VALUE(group.value, '$.AsOfDate'),
+    JSON_VALUE(group.value, '$.AsOfTime'),
+    JSON_VALUE(group.value, '$.CurrencyCode'),
+    CAST(JSON_VALUE(group.value, '$.AsOfDateModifier') AS INT),
+    @FileHeaderId
+FROM OPENJSON(@json, '$.Groups') AS group;
+
+-- Insert AccountRecord
+DECLARE @AccountRecordId INT;
+INSERT INTO AccountRecord (AccountNumber, CurrencyCode, GroupHeaderId)
+OUTPUT INSERTED.Id INTO @AccountRecordId
+SELECT
+    JSON_VALUE(account.value, '$.AccountNumber'),
+    JSON_VALUE(account.value, '$.CurrencyCode'),
+    @GroupHeaderId
+FROM OPENJSON(@json, '$.Groups.Accounts') AS account;
+
+-- Insert AccountDetails
+DECLARE @AccountDetailId INT;
+INSERT INTO AccountDetails (TypeCode, Amount, ItemCount, AccountRecordId)
+OUTPUT INSERTED.Id INTO @AccountDetailId
+SELECT
+    JSON_VALUE(detail.value, '$.TypeCode'),
+    CAST(JSON_VALUE(detail.value, '$.Amount') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(detail.value, '$.ItemCount') AS BIGINT),
+    @AccountRecordId
+FROM OPENJSON(@json, '$.Groups.Accounts.Details') AS detail;
+
+-- Insert FundType for AccountDetails
+INSERT INTO FundType (FundsType, ImmediateAmount, OneDayAmount, TwoOrMoreDaysAmount, ValueDate, ValueTime, NumberOfDistributions, DistributionInfo, AccountDetailId)
+SELECT
+    JSON_VALUE(fund.value, '$.FundsType'),
+    CAST(JSON_VALUE(fund.value, '$.ImmediateAmount') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(fund.value, '$.
+
+
+
+
+
+
+
+
