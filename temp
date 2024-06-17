@@ -206,9 +206,43 @@ INSERT INTO FundType (FundsType, ImmediateAmount, OneDayAmount, TwoOrMoreDaysAmo
 SELECT
     JSON_VALUE(fund.value, '$.FundsType'),
     CAST(JSON_VALUE(fund.value, '$.ImmediateAmount') AS DECIMAL(18, 2)),
-    CAST(JSON_VALUE(fund.value, '$.
+    CAST(JSON_VALUE(fund.value, '$.OneDayAmount') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(fund.value, '$.TwoOrMoreDaysAmount') AS DECIMAL(18, 2)),
+    JSON_VALUE(fund.value, '$.ValueDate'),
+    JSON_VALUE(fund.value, '$.ValueTime'),
+    CAST(JSON_VALUE(fund.value, '$.NumberOfDistributions') AS BIGINT),
+    JSON_VALUE(fund.value, '$.DistributionInfo'),
+    @AccountDetailId
+FROM OPENJSON(@json, '$.Groups.Accounts.Details.FundsType') AS fund;
 
+-- Insert TransactionRecord
+DECLARE @TransactionRecordId INT;
+INSERT INTO TransactionRecord (TypeCode, Amount, BankReferenceNumber, CustomerReferenceNumber, Text, AccountRecordId)
+OUTPUT INSERTED.Id INTO @TransactionRecordId
+SELECT
+    JSON_VALUE(trans.value, '$.TypeCode'),
+    CAST(JSON_VALUE(trans.value, '$.Amount') AS DECIMAL(18, 2)),
+    JSON_VALUE(trans.value, '$.BankReferenceNumber'),
+    JSON_VALUE(trans.value, '$.CustomerReferenceNumber'),
+    JSON_VALUE(trans.value, '$.Text'),
+    @AccountRecordId
+FROM OPENJSON(@json, '$.Groups.Accounts.TransactionRecords') AS trans;
 
+-- Insert FundType for TransactionRecord
+INSERT INTO FundType (FundsType, ImmediateAmount, OneDayAmount, TwoOrMoreDaysAmount, ValueDate, ValueTime, NumberOfDistributions, DistributionInfo, TransactionRecordId)
+SELECT
+    JSON_VALUE(fund.value, '$.FundsType'),
+    CAST(JSON_VALUE(fund.value, '$.ImmediateAmount') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(fund.value, '$.OneDayAmount') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(fund.value, '$.TwoOrMoreDaysAmount') AS DECIMAL(18, 2)),
+    JSON_VALUE(fund.value, '$.ValueDate'),
+    JSON_VALUE(fund.value, '$.ValueTime'),
+    CAST(JSON_VALUE(fund.value, '$.NumberOfDistributions') AS BIGINT),
+    JSON_VALUE(fund.value, '$.DistributionInfo'),
+    @TransactionRecordId
+FROM OPENJSON(@json, '$.Groups.Accounts.TransactionRecords.FundsType') AS fund;
+
+-- Continue with the remaining inserts for AccountTotals, GroupTotals, and FileTrailer similarly
 
 
 
