@@ -95,66 +95,15 @@ CREATE TABLE FundType (
 
 
 
-
 DECLARE @json NVARCHAR(MAX);
-
-SELECT @json = BulkColumn
-FROM OPENROWSET (BULK 'C:\path\to\parsedData.json', SINGLE_CLOB) AS j;
-
-
-
-DECLARE @FileHeaderId INT;
-
-INSERT INTO FileHeader (SenderId, ReceiverId, FileCreationDate, FileCreationTime, FileIdNumber, RecordLength, BlockSize, VersionNumber)
-OUTPUT INSERTED.Id INTO @FileHeaderId
-SELECT
-    JSON_VALUE(@json, '$.FileHeader.SenderId'),
-    JSON_VALUE(@json, '$.FileHeader.ReceiverId'),
-    JSON_VALUE(@json, '$.FileHeader.FileCreationDate'),
-    JSON_VALUE(@json, '$.FileHeader.FileCreationTime'),
-    CAST(JSON_VALUE(@json, '$.FileHeader.FileIdNumber') AS BIGINT),
-    CAST(JSON_VALUE(@json, '$.FileHeader.RecordLength') AS BIGINT),
-    CAST(JSON_VALUE(@json, '$.FileHeader.BlockSize') AS BIGINT),
-    CAST(JSON_VALUE(@json, '$.FileHeader.VersionNumber') AS BIGINT);
-
-
-DECLARE @GroupHeaderId INT;
-
-INSERT INTO GroupHeader (ReceiverId, SenderId, GroupStatus, AsOfDate, AsOfTime, CurrencyCode, AsOfDateModifier, FileHeaderId)
-OUTPUT INSERTED.Id INTO @GroupHeaderId
-SELECT
-    JSON_VALUE(group.value, '$.ReceiverId'),
-    JSON_VALUE(group.value, '$.SenderId'),
-    JSON_VALUE(group.value, '$.GroupStatus'),
-    JSON_VALUE(group.value, '$.AsOfDate'),
-    JSON_VALUE(group.value, '$.AsOfTime'),
-    JSON_VALUE(group.value, '$.CurrencyCode'),
-    CAST(JSON_VALUE(group.value, '$.AsOfDateModifier') AS INT),
-    @FileHeaderId
-FROM OPENJSON(@json, '$.Groups') AS group;
-
-
-DECLARE @AccountRecordId INT;
-
-INSERT INTO AccountRecord (AccountNumber, CurrencyCode, GroupHeaderId)
-OUTPUT INSERTED.Id INTO @AccountRecordId
-SELECT
-    JSON_VALUE(account.value, '$.AccountNumber'),
-    JSON_VALUE(account.value, '$.CurrencyCode'),
-    @GroupHeaderId
-FROM OPENJSON(@json, '$.Groups.Accounts') AS account;
-
-
-DECLARE @json NVARCHAR(MAX);
-
-SELECT @json = BulkColumn
-FROM OPENROWSET (BULK 'C:\path\to\parsedData.json', SINGLE_CLOB) AS j;
-
-DECLARE @FileHeaderId INT;
+SET @json = '{
+  "FileHeader": { ... }, 
+  "Groups": [ ... ],
+  "FileTrailer": { ... }
+}';
 
 -- Insert FileHeader
 INSERT INTO FileHeader (SenderId, ReceiverId, FileCreationDate, FileCreationTime, FileIdNumber, RecordLength, BlockSize, VersionNumber)
-OUTPUT INSERTED.Id INTO @FileHeaderId
 SELECT
     JSON_VALUE(@json, '$.FileHeader.SenderId'),
     JSON_VALUE(@json, '$.FileHeader.ReceiverId'),
@@ -165,10 +114,11 @@ SELECT
     CAST(JSON_VALUE(@json, '$.FileHeader.BlockSize') AS BIGINT),
     CAST(JSON_VALUE(@json, '$.FileHeader.VersionNumber') AS BIGINT);
 
--- Insert GroupHeader
-DECLARE @GroupHeaderId INT;
+-- Assuming the Id for the FileHeader is 1 (or use OUTPUT INSERTED.Id to capture it)
+DECLARE @FileHeaderId INT = SCOPE_IDENTITY();
+
+-- Insert Groups
 INSERT INTO GroupHeader (ReceiverId, SenderId, GroupStatus, AsOfDate, AsOfTime, CurrencyCode, AsOfDateModifier, FileHeaderId)
-OUTPUT INSERTED.Id INTO @GroupHeaderId
 SELECT
     JSON_VALUE(group.value, '$.ReceiverId'),
     JSON_VALUE(group.value, '$.SenderId'),
@@ -180,29 +130,34 @@ SELECT
     @FileHeaderId
 FROM OPENJSON(@json, '$.Groups') AS group;
 
--- Insert AccountRecord
-DECLARE @AccountRecordId INT;
+-- Assuming the Id for the GroupHeader is 1 (or use OUTPUT INSERTED.Id to capture it)
+DECLARE @GroupHeaderId INT = SCOPE_IDENTITY();
+
+-- Insert Accounts
 INSERT INTO AccountRecord (AccountNumber, CurrencyCode, GroupHeaderId)
-OUTPUT INSERTED.Id INTO @AccountRecordId
 SELECT
     JSON_VALUE(account.value, '$.AccountNumber'),
     JSON_VALUE(account.value, '$.CurrencyCode'),
     @GroupHeaderId
-FROM OPENJSON(@json, '$.Groups.Accounts') AS account;
+FROM OPENJSON(@json, '$.Groups[0].Accounts') AS account;
+
+-- Assuming the Id for the AccountRecord is 1 (or use OUTPUT INSERTED.Id to capture it)
+DECLARE @AccountRecordId INT = SCOPE_IDENTITY();
 
 -- Insert AccountDetails
-DECLARE @AccountDetailId INT;
 INSERT INTO AccountDetails (TypeCode, Amount, ItemCount, AccountRecordId)
-OUTPUT INSERTED.Id INTO @AccountDetailId
 SELECT
     JSON_VALUE(detail.value, '$.TypeCode'),
     CAST(JSON_VALUE(detail.value, '$.Amount') AS DECIMAL(18, 2)),
     CAST(JSON_VALUE(detail.value, '$.ItemCount') AS BIGINT),
     @AccountRecordId
-FROM OPENJSON(@json, '$.Groups.Accounts.Details') AS detail;
+FROM OPENJSON(@json, '$.Groups[0].Accounts[0].Details') AS detail;
+
+-- Assuming the Id for the AccountDetails is 1 (or use OUTPUT INSERTED.Id to capture it)
+DECLARE @AccountDetailId INT = SCOPE_IDENTITY();
 
 -- Insert FundType for AccountDetails
-INSERT INTO FundType (FundsType, ImmediateAmount, OneDayAmount, TwoOrMoreDaysAmount, ValueDate, ValueTime, NumberOfDistributions, DistributionInfo, AccountDetailId)
+INSERT INTO FundType (FundsType, ImmediateAmount, OneDayAmount, TwoOrMoreDaysAmount, ValueDate, ValueTime, NumberOfDistributions, DistributionInfo, AccountDetailsId)
 SELECT
     JSON_VALUE(fund.value, '$.FundsType'),
     CAST(JSON_VALUE(fund.value, '$.ImmediateAmount') AS DECIMAL(18, 2)),
@@ -213,22 +168,23 @@ SELECT
     CAST(JSON_VALUE(fund.value, '$.NumberOfDistributions') AS BIGINT),
     JSON_VALUE(fund.value, '$.DistributionInfo'),
     @AccountDetailId
-FROM OPENJSON(@json, '$.Groups.Accounts.Details.FundsType') AS fund;
+FROM OPENJSON(@json, '$.Groups[0].Accounts[0].Details[0].FundsType') AS fund;
 
--- Insert TransactionRecord
-DECLARE @TransactionRecordId INT;
+-- Insert TransactionRecords
 INSERT INTO TransactionRecord (TypeCode, Amount, BankReferenceNumber, CustomerReferenceNumber, Text, AccountRecordId)
-OUTPUT INSERTED.Id INTO @TransactionRecordId
 SELECT
-    JSON_VALUE(trans.value, '$.TypeCode'),
-    CAST(JSON_VALUE(trans.value, '$.Amount') AS DECIMAL(18, 2)),
-    JSON_VALUE(trans.value, '$.BankReferenceNumber'),
-    JSON_VALUE(trans.value, '$.CustomerReferenceNumber'),
-    JSON_VALUE(trans.value, '$.Text'),
+    JSON_VALUE(transaction.value, '$.TypeCode'),
+    CAST(JSON_VALUE(transaction.value, '$.Amount') AS DECIMAL(18, 2)),
+    JSON_VALUE(transaction.value, '$.BankReferenceNumber'),
+    JSON_VALUE(transaction.value, '$.CustomerReferenceNumber'),
+    JSON_VALUE(transaction.value, '$.Text'),
     @AccountRecordId
-FROM OPENJSON(@json, '$.Groups.Accounts.TransactionRecords') AS trans;
+FROM OPENJSON(@json, '$.Groups[0].Accounts[0].TransactionRecords') AS transaction;
 
--- Insert FundType for TransactionRecord
+-- Assuming the Id for the TransactionRecord is 1 (or use OUTPUT INSERTED.Id to capture it)
+DECLARE @TransactionRecordId INT = SCOPE_IDENTITY();
+
+-- Insert FundType for TransactionRecords
 INSERT INTO FundType (FundsType, ImmediateAmount, OneDayAmount, TwoOrMoreDaysAmount, ValueDate, ValueTime, NumberOfDistributions, DistributionInfo, TransactionRecordId)
 SELECT
     JSON_VALUE(fund.value, '$.FundsType'),
@@ -240,12 +196,31 @@ SELECT
     CAST(JSON_VALUE(fund.value, '$.NumberOfDistributions') AS BIGINT),
     JSON_VALUE(fund.value, '$.DistributionInfo'),
     @TransactionRecordId
-FROM OPENJSON(@json, '$.Groups.Accounts.TransactionRecords.FundsType') AS fund;
+FROM OPENJSON(@json, '$.Groups[0].Accounts[0].TransactionRecords[0].FundsType') AS fund;
 
--- Continue with the remaining inserts for AccountTotals, GroupTotals, and FileTrailer similarly
+-- Insert AccountTotals
+INSERT INTO AccountTotals (AccountControlTotal, NumberOfRecords, AccountRecordId)
+SELECT
+    CAST(JSON_VALUE(accountTotal.value, '$.AccountControlTotal') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(accountTotal.value, '$.NumberOfRecords') AS BIGINT),
+    @AccountRecordId
+FROM OPENJSON(@json, '$.Groups[0].Accounts[0].AccountTotals') AS accountTotal;
 
+-- Insert GroupTotals
+INSERT INTO GroupTotals (GroupControlTotal, NumberOfAccounts, NumberOfRecords, GroupHeaderId)
+SELECT
+    CAST(JSON_VALUE(groupTotal.value, '$.GroupControlTotal') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(groupTotal.value, '$.NumberOfAccounts') AS BIGINT),
+    CAST(JSON_VALUE(groupTotal.value, '$.NumberOfRecords') AS BIGINT),
+    @GroupHeaderId
+FROM OPENJSON(@json, '$.Groups[0].GroupTotals') AS groupTotal;
 
-
-
+-- Insert FileTrailer
+INSERT INTO FileTrailer (FileControlTotal, NumberOfGroups, NumberOfRecords, FileHeaderId)
+SELECT
+    CAST(JSON_VALUE(@json, '$.FileTrailer.FileControlTotal') AS DECIMAL(18, 2)),
+    CAST(JSON_VALUE(@json, '$.FileTrailer.NumberOfGroups') AS BIGINT),
+    CAST(JSON_VALUE(@json, '$.FileTrailer.NumberOfRecords') AS BIGINT),
+    @FileHeaderId;
 
 
