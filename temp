@@ -295,3 +295,70 @@ SELECT
     @FileHeaderId;
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+DECLARE @json NVARCHAR(MAX) = '...'; -- Replace with your JSON string
+
+-- Insert into FileHeader
+INSERT INTO FileHeader (ReceiverId, SenderId, OtherField, ...)
+VALUES (
+    JSON_VALUE(@json, '$.FileHeader.ReceiverId'),
+    JSON_VALUE(@json, '$.FileHeader.SenderId'),
+    JSON_VALUE(@json, '$.FileHeader.OtherField'),
+    ...
+);
+
+-- Insert into GroupHeaders dynamically
+DECLARE @jsonGroupHeaders NVARCHAR(MAX);
+SELECT @jsonGroupHeaders = JSON_QUERY(@json, '$.GroupHeaders');
+
+DECLARE @idx INT = 0;
+DECLARE @rowCount INT = JSON_QUERY(@jsonGroupHeaders, '$.lax $');
+DECLARE @current JSON;
+
+WHILE @idx < @rowCount
+BEGIN
+    SELECT @current = JSON_QUERY(@jsonGroupHeaders, '$[' + CAST(@idx AS NVARCHAR(10)) + ']');
+
+    INSERT INTO GroupHeaders (ReceiverId, SenderId, GroupStatus, ...)
+    VALUES (
+        JSON_VALUE(@current, '$.ReceiverId'),
+        JSON_VALUE(@current, '$.SenderId'),
+        JSON_VALUE(@current, '$.GroupStatus'),
+        ...
+    );
+
+    SET @idx = @idx + 1;
+END;
+
+-- Insert into OtherTables dynamically
+DECLARE @jsonOtherTables NVARCHAR(MAX);
+SELECT @jsonOtherTables = JSON_QUERY(@json, '$.OtherTables');
+
+-- Insert each object in OtherTables array
+SET @idx = 0;
+SET @rowCount = JSON_QUERY(@jsonOtherTables, '$.lax $');
+
+WHILE @idx < @rowCount
+BEGIN
+    SELECT @current = JSON_QUERY(@jsonOtherTables, '$[' + CAST(@idx AS NVARCHAR(10)) + ']');
+
+    INSERT INTO OtherTables (Column1, Column2, ...)
+    VALUES (
+        JSON_VALUE(@current, '$.Column1'),
+        JSON_VALUE(@current, '$.Column2'),
+        ...
+    );
+
+    SET @idx = @idx + 1;
+END;
