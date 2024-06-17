@@ -93,6 +93,77 @@ CREATE TABLE FundType (
 
 
 
+{
+  "FileHeader": {
+    "SenderId": "ABC",
+    "ReceiverId": "XYZ",
+    "FileCreationDate": "2023-01-01",
+    "FileCreationTime": "12:00:00",
+    "FileIdNumber": 1,
+    "RecordLength": 0,
+    "BlockSize": 100,
+    "VersionNumber": 2
+  },
+  "Groups": [
+    {
+      "ReceiverId": "XYZ",
+      "SenderId": "ABC",
+      "GroupStatus": "Status",
+      "AsOfDate": "2023-01-01",
+      "AsOfTime": "12:00:00",
+      "CurrencyCode": "USD",
+      "AsOfDateModifier": 1,
+      "Accounts": [
+        {
+          "AccountNumber": "123456789",
+          "CurrencyCode": "USD",
+          "Details": [
+            {
+              "TypeCode": "Code1",
+              "Amount": 100.00,
+              "ItemCount": 1,
+              "FundsType": {
+                "FundsType": "S",
+                "ImmediateAmount": 50.00,
+                "OneDayAmount": 30.00,
+                "TwoOrMoreDaysAmount": 20.00
+              }
+            }
+          ],
+          "TransactionRecords": [
+            {
+              "TypeCode": "TCode",
+              "Amount": 100.00,
+              "BankReferenceNumber": "BRN",
+              "CustomerReferenceNumber": "CRN",
+              "Text": "Transaction Text",
+              "FundsType": {
+                "FundsType": "S",
+                "ImmediateAmount": 50.00,
+                "OneDayAmount": 30.00,
+                "TwoOrMoreDaysAmount": 20.00
+              }
+            }
+          ],
+          "AccountTotals": {
+            "AccountControlTotal": 100.00,
+            "NumberOfRecords": 1
+          }
+        }
+      ],
+      "GroupTotals": {
+        "GroupControlTotal": 100.00,
+        "NumberOfAccounts": 1,
+        "NumberOfRecords": 1
+      }
+    }
+  ],
+  "FileTrailer": {
+    "FileControlTotal": 100.00,
+    "NumberOfGroups": 1,
+    "NumberOfRecords": 1
+  }
+}
 
 
 DECLARE @json NVARCHAR(MAX);
